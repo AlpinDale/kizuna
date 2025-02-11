@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from kizuna import _custom_ops as ops
 
 
 class LinearNorm(nn.Module):
@@ -27,9 +28,18 @@ class LayerNorm(nn.Module):
         self.beta = nn.Parameter(torch.zeros(channels))
 
     def forward(self, x):
-        x = x.transpose(1, -1)
-        x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
-        return x.transpose(1, -1)
+        x = x.transpose(1, -1)  # move channels to last dimension
+        out = torch.empty_like(x)
+        print("Using custom layer norm")
+        ops.layer_norm(
+            out,
+            x,
+            self.gamma.data,
+            self.beta.data,
+            self.eps,
+        )
+        print("Done")
+        return out.transpose(1, -1)  # move them back
 
 
 class TextEncoder(nn.Module):
