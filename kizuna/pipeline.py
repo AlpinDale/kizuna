@@ -1,4 +1,4 @@
-from .model import KModel
+from .modeling.model import KModel
 from dataclasses import dataclass
 from huggingface_hub import hf_hub_download
 from loguru import logger

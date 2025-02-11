@@ -1,7 +1,11 @@
-__version__ = '0.7.13'
+from kizuna.modeling.model import KModel
+from kizuna.pipeline import KPipeline
+
+__version__ = '0.1.0'
+
+import sys
 
 from loguru import logger
-import sys
 
 # Remove default handler
 logger.remove()
@@ -17,7 +21,6 @@ logger.add(
 )
 
 # Disable before release or as needed
-logger.disable("kokoro")
+logger.disable("kizuna")
 
-from .model import KModel
-from .pipeline import KPipeline
+__all__ = ["KModel", "KPipeline"]

@@ -1,0 +1,7 @@
+huggingface_hub
+loguru
+misaki[en]>=0.7.13
+numpy==1.26.4
+scipy
+torch==2.4.0
+transformers
