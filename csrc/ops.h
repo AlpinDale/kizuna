@@ -21,3 +21,11 @@ void ada_layer_norm(torch::Tensor& out, torch::Tensor& input, torch::Tensor& gam
 
 void ada_instance_norm(torch::Tensor& out, torch::Tensor& input, torch::Tensor& gamma,
                    torch::Tensor& beta, double epsilon);
+
+void istft(torch::Tensor& output,
+           torch::Tensor& magnitude,
+           torch::Tensor& phase,
+           torch::Tensor& window,
+           int64_t hop_length,
+           bool center = true,
+           bool normalized = false);

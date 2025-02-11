@@ -49,6 +49,10 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.def(
       "ada_instance_norm(Tensor! out, Tensor input, Tensor gamma, Tensor beta, float epsilon) -> ()");
   ops.impl("ada_instance_norm", torch::kCUDA, &ada_instance_norm);
+
+  // ISTFT operation
+  ops.def("istft(Tensor! output, Tensor! magnitude, Tensor! phase, Tensor! window, int hop_length, bool center, bool normalized) -> ()");
+  ops.impl("istft", torch::kCUDA, &istft);
 }
 
 REGISTER_EXTENSION(TORCH_EXTENSION_NAME)

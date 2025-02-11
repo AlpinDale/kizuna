@@ -94,31 +94,44 @@ class AdaINResBlock1(nn.Module):
         return x
 
 
-class TorchSTFT(nn.Module):
+class TorchSTFT(CustomOp):
     def __init__(self, filter_length=800, hop_length=200, win_length=800, window='hann'):
         super().__init__()
         self.filter_length = filter_length
         self.hop_length = hop_length
         self.win_length = win_length
         self.window = torch.from_numpy(get_window(window, win_length, fftbins=True).astype(np.float32))
-
+        
     def transform(self, input_data):
+        window = self.window.to(input_data.device)
         forward_transform = torch.stft(
             input_data,
-            self.filter_length, self.hop_length, self.win_length, window=self.window.to(input_data.device),
+            self.filter_length, self.hop_length, self.win_length, window=window,
             return_complex=True)
         return torch.abs(forward_transform), torch.angle(forward_transform)
 
-    def inverse(self, magnitude, phase):
+    def inverse_native(self, magnitude, phase):
+        window = self.window.to(magnitude.device)
         inverse_transform = torch.istft(
             magnitude * torch.exp(phase * 1j),
-            self.filter_length, self.hop_length, self.win_length, window=self.window.to(magnitude.device))
-        return inverse_transform.unsqueeze(-2)  # unsqueeze to stay consistent with conv_transpose1d implementation
+            self.filter_length, self.hop_length, self.win_length, window=window)
+        return inverse_transform.unsqueeze(-2)
 
-    def forward(self, input_data):
+    def inverse_cuda(self, magnitude, phase):
+        from kizuna import _custom_ops as ops
+        reconstruction = torch.empty_like(magnitude)
+        window = self.window.to(magnitude.device)
+        ops.istft(reconstruction, magnitude, phase, window, self.hop_length)
+        return reconstruction.unsqueeze(-2)
+
+    def forward_native(self, input_data):
         self.magnitude, self.phase = self.transform(input_data)
-        reconstruction = self.inverse(self.magnitude, self.phase)
+        reconstruction = self.inverse_native(self.magnitude, self.phase)
         return reconstruction
+
+    def forward_cuda(self, input_data):
+        # TODO: fix iSTFT kernels
+        return self.forward_native(input_data)
 
 
 class SineGen(nn.Module):
@@ -270,7 +283,7 @@ class SourceModuleHnNSF(nn.Module):
         return sine_merge, noise, uv
 
 
-class Generator(nn.Module):
+class Generator(CustomOp):
     def __init__(self, style_dim, resblock_kernel_sizes, upsample_rates, upsample_initial_channel, resblock_dilation_sizes, upsample_kernel_sizes, gen_istft_n_fft, gen_istft_hop_size):
         super(Generator, self).__init__()
         self.num_kernels = len(resblock_kernel_sizes)
@@ -308,7 +321,7 @@ class Generator(nn.Module):
         self.reflection_pad = nn.ReflectionPad1d((1, 0))
         self.stft = TorchSTFT(filter_length=gen_istft_n_fft, hop_length=gen_istft_hop_size, win_length=gen_istft_n_fft)
 
-    def forward(self, x, s, f0):
+    def forward_native(self, x, s, f0):
         with torch.no_grad():
             f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
             har_source, noi_source, uv = self.m_source(f0)
@@ -334,7 +347,35 @@ class Generator(nn.Module):
         x = self.conv_post(x)
         spec = torch.exp(x[:,:self.post_n_fft // 2 + 1, :])
         phase = torch.sin(x[:, self.post_n_fft // 2 + 1:, :])
-        return self.stft.inverse(spec, phase)
+        return self.stft.inverse_native(spec, phase)
+
+    def forward_cuda(self, x, s, f0):
+        with torch.no_grad():
+            f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
+            har_source, noi_source, uv = self.m_source(f0)
+            har_source = har_source.transpose(1, 2).squeeze(1)
+            har_spec, har_phase = self.stft.transform(har_source)
+            har = torch.cat([har_spec, har_phase], dim=1)
+        for i in range(self.num_upsamples):
+            x = F.leaky_relu(x, negative_slope=0.1) 
+            x_source = self.noise_convs[i](har)
+            x_source = self.noise_res[i](x_source, s)
+            x = self.ups[i](x)
+            if i == self.num_upsamples - 1:
+                x = self.reflection_pad(x)
+            x = x + x_source
+            xs = None
+            for j in range(self.num_kernels):
+                if xs is None:
+                    xs = self.resblocks[i*self.num_kernels+j](x, s)
+                else:
+                    xs += self.resblocks[i*self.num_kernels+j](x, s)
+            x = xs / self.num_kernels
+        x = F.leaky_relu(x)
+        x = self.conv_post(x)
+        spec = torch.exp(x[:,:self.post_n_fft // 2 + 1, :])
+        phase = torch.sin(x[:, self.post_n_fft // 2 + 1:, :])
+        return self.stft.inverse_native(spec, phase)
 
 
 class UpSample1d(nn.Module):

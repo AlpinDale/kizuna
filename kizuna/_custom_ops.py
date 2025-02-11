@@ -55,6 +55,11 @@ def ada_instance_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tens
     torch.ops._C.ada_instance_norm(out, input, weight, bias, epsilon)
 
 
+def istft(output: torch.Tensor, magnitude: torch.Tensor, phase: torch.Tensor,
+          window: torch.Tensor, hop_length: int, center: bool=True, normalized: bool=False) -> None:
+    torch.ops._C.istft(output, magnitude, phase, window, hop_length, center, normalized)
+
+
 names_and_values = globals()
 names_and_values_to_update = {}
 # prepare variables to avoid dict size change during iteration

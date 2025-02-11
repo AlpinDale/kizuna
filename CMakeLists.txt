@@ -191,6 +191,7 @@ endif()
 
 set(KIZUNA_EXT_SRC
   "csrc/layernorm.cu"
+  "csrc/istft/istft_kernel.cu"
   "csrc/torch_bindings.cpp")
 
 define_gpu_extension_target(
