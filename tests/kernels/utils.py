@@ -5,6 +5,7 @@ import torch
 
 class RMSNorm(torch.nn.Module):
     """Root mean square normalization."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -41,6 +42,7 @@ class RMSNorm(torch.nn.Module):
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """Custom CUDA kernel implementation."""
         from kizuna import _custom_ops as ops
+
         if residual is not None:
             ops.fused_add_rms_norm(
                 x,
@@ -61,6 +63,7 @@ class RMSNorm(torch.nn.Module):
 
 class LayerNorm(torch.nn.Module):
     """Layer normalization."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -99,6 +102,7 @@ class LayerNorm(torch.nn.Module):
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """Custom CUDA kernel implementation."""
         from kizuna import _custom_ops as ops
+
         if residual is not None:
             ops.fused_add_layer_norm(
                 x,
@@ -121,6 +125,7 @@ class LayerNorm(torch.nn.Module):
 
 class AdaLayerNorm(torch.nn.Module):
     """Reference implementation of adaptive layer norm."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -133,7 +138,7 @@ class AdaLayerNorm(torch.nn.Module):
         self,
         x: torch.Tensor,
         gamma: torch.Tensor,  # [..., hidden_size]
-        beta: torch.Tensor,   # [..., hidden_size]
+        beta: torch.Tensor,  # [..., hidden_size]
     ) -> torch.Tensor:
         """PyTorch reference implementation."""
         orig_dtype = x.dtype
@@ -154,6 +159,7 @@ class AdaLayerNorm(torch.nn.Module):
     ) -> torch.Tensor:
         """Custom CUDA kernel implementation."""
         from kizuna import _custom_ops as ops
+
         out = torch.empty_like(x)
         ops.ada_layer_norm(
             out,
@@ -167,6 +173,7 @@ class AdaLayerNorm(torch.nn.Module):
 
 class AdaInstanceNorm(torch.nn.Module):
     """Reference implementation of adaptive instance norm."""
+
     def __init__(
         self,
         style_dim: int,
@@ -191,7 +198,7 @@ class AdaInstanceNorm(torch.nn.Module):
         orig_bias = self.fc.bias.data
         self.fc.weight.data = orig_weight.to(torch.float32)
         self.fc.bias.data = orig_bias.to(torch.float32)
-        
+
         try:
             h = self.fc(s)
             h = h.view(h.size(0), h.size(1), 1)
@@ -212,6 +219,7 @@ class AdaInstanceNorm(torch.nn.Module):
     ) -> torch.Tensor:
         """Custom CUDA kernel implementation."""
         from kizuna import _custom_ops as ops
+
         h = self.fc(s)
         h = h.view(h.size(0), h.size(1), 1)
         gamma, beta = torch.chunk(h, chunks=2, dim=1)

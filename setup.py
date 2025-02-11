@@ -12,10 +12,9 @@ from setuptools import Extension, find_packages, setup
 from setuptools.command.build_ext import build_ext
 from torch.utils.cpp_extension import CUDA_HOME
 
-
 ROOT_DIR = os.path.dirname(__file__)
 logger = logging.getLogger(__name__)
-       
+
 
 MAIN_CUDA_VERSION = "12.4"
 
@@ -34,13 +33,12 @@ def is_ninja_available() -> bool:
 
 def remove_prefix(text, prefix):
     if text.startswith(prefix):
-        return text[len(prefix):]
+        return text[len(prefix) :]
     return text
 
 
 class CMakeExtension(Extension):
-
-    def __init__(self, name: str, cmake_lists_dir: str = '.', **kwa) -> None:
+    def __init__(self, name: str, cmake_lists_dir: str = ".", **kwa) -> None:
         super().__init__(name, sources=[], py_limited_api=True, **kwa)
         self.cmake_lists_dir = os.path.abspath(cmake_lists_dir)
 
@@ -67,8 +65,9 @@ class cmake_build_ext(build_ext):
                 logger.info(f"Using {num_jobs} CPUs as the number of jobs.")
             except AttributeError:
                 num_jobs = os.cpu_count()
-                logger.info(f"Using os.cpu_count()={num_jobs} as the number of"
-                            " jobs.")
+                logger.info(
+                    f"Using os.cpu_count()={num_jobs} as the number of" " jobs."
+                )
 
         nvcc_threads = None
         if get_nvcc_cuda_version() >= Version("11.2"):
@@ -79,8 +78,10 @@ class cmake_build_ext(build_ext):
             nvcc_threads = os.getenv("NVCC_THREADS")
             if nvcc_threads is not None:
                 nvcc_threads = int(nvcc_threads)
-                logger.info(f"Using NVCC_THREADS={nvcc_threads} as the number"
-                            " of nvcc threads.")
+                logger.info(
+                    f"Using NVCC_THREADS={nvcc_threads} as the number"
+                    " of nvcc threads."
+                )
             else:
                 nvcc_threads = 1
             num_jobs = max(1, num_jobs // nvcc_threads)
@@ -105,73 +106,69 @@ class cmake_build_ext(build_ext):
 
         # where .so files will be written, should be the same for all extensions
         # that use the same CMakeLists.txt.
-        outdir = os.path.abspath(
-            os.path.dirname(self.get_ext_fullpath(ext.name)))
+        outdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
 
         python_executable = sys.executable
         if sys.platform.startswith("win32"):
             python_executable = python_executable.replace("\\", "/")
 
         cmake_args = [
-            '-DCMAKE_BUILD_TYPE={}'.format(cfg),
-            '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={}'.format(outdir),
-            '-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY={}'.format(self.build_temp),
+            "-DCMAKE_BUILD_TYPE={}".format(cfg),
+            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={}".format(outdir),
+            "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY={}".format(self.build_temp),
         ]
-
 
         verbose = os.getenv("VERBOSE")
         if verbose:
-            cmake_args += ['-DCMAKE_VERBOSE_MAKEFILE=ON']
+            cmake_args += ["-DCMAKE_VERBOSE_MAKEFILE=ON"]
 
         if is_sccache_available():
             cmake_args += [
-                '-DCMAKE_CXX_COMPILER_LAUNCHER=sccache',
-                '-DCMAKE_CUDA_COMPILER_LAUNCHER=sccache',
+                "-DCMAKE_CXX_COMPILER_LAUNCHER=sccache",
+                "-DCMAKE_CUDA_COMPILER_LAUNCHER=sccache",
             ]
             logger.info("Using sccache as the compiler launcher.")
         elif is_ccache_available():
             cmake_args += [
-                '-DCMAKE_CXX_COMPILER_LAUNCHER=ccache',
-                '-DCMAKE_CUDA_COMPILER_LAUNCHER=ccache',
+                "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
+                "-DCMAKE_CUDA_COMPILER_LAUNCHER=ccache",
             ]
             logger.info("Using ccache as the compiler launcher.")
 
         # Pass the python executable to cmake so it can find an exact
         # match.
-        cmake_args += [
-            '-DKIZUNA_PYTHON_EXECUTABLE={}'.format(python_executable)
-        ]
-
+        cmake_args += ["-DKIZUNA_PYTHON_EXECUTABLE={}".format(python_executable)]
 
         # Pass the python path to cmake so it can reuse the build dependencies
         # on subsequent calls to python.
-        cmake_args += ['-DKIZUNA_PYTHON_PATH={}'.format(":".join(sys.path))]
+        cmake_args += ["-DKIZUNA_PYTHON_PATH={}".format(":".join(sys.path))]
 
         num_jobs, nvcc_threads = self.compute_num_jobs()
 
         if nvcc_threads:
-            cmake_args += ['-DNVCC_THREADS={}'.format(nvcc_threads)]
+            cmake_args += ["-DNVCC_THREADS={}".format(nvcc_threads)]
 
         if is_ninja_available():
-            build_tool = ['-G', 'Ninja']
+            build_tool = ["-G", "Ninja"]
             cmake_args += [
-                '-DCMAKE_JOB_POOL_COMPILE:STRING=compile',
-                '-DCMAKE_JOB_POOLS:STRING=compile={}'.format(num_jobs),
+                "-DCMAKE_JOB_POOL_COMPILE:STRING=compile",
+                "-DCMAKE_JOB_POOLS:STRING=compile={}".format(num_jobs),
             ]
         else:
             # Default build tool to whatever cmake picks.
             build_tool = []
 
         subprocess.check_call(
-            ['cmake', ext.cmake_lists_dir, *build_tool, *cmake_args],
-            cwd=self.build_temp)
+            ["cmake", ext.cmake_lists_dir, *build_tool, *cmake_args],
+            cwd=self.build_temp,
+        )
 
     def build_extensions(self) -> None:
         # Ensure that CMake is present and working
         try:
-            subprocess.check_output(['cmake', '--version'])
+            subprocess.check_output(["cmake", "--version"])
         except OSError as e:
-            raise RuntimeError('Cannot find CMake executable') from e
+            raise RuntimeError("Cannot find CMake executable") from e
         # Create build directory if it does not exist.
         if not os.path.exists(self.build_temp):
             os.makedirs(self.build_temp)
@@ -199,8 +196,9 @@ def get_nvcc_cuda_version() -> Version:
 
     Adapted from https://github.com/NVIDIA/apex/blob/8b7a1ff183741dd8f9b87e7bafd04cfde99cea28/setup.py
     """
-    nvcc_output = subprocess.check_output([CUDA_HOME + "/bin/nvcc", "-V"],
-                                          universal_newlines=True)
+    nvcc_output = subprocess.check_output(
+        [CUDA_HOME + "/bin/nvcc", "-V"], universal_newlines=True
+    )
     output = nvcc_output.split()
     release_idx = output.index("release") + 1
     nvcc_cuda_version = parse(output[release_idx].split(",")[0])
@@ -217,8 +215,9 @@ def find_version(filepath: str) -> str:
     Adapted from https://github.com/ray-project/ray/blob/0b190ee1160eeca9796bc091e07eaebf4c85b511/python/setup.py
     """
     with open(filepath) as fp:
-        version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]",
-                                  fp.read(), re.M)
+        version_match = re.search(
+            r"^__version__ = ['\"]([^'\"]*)['\"]", fp.read(), re.M
+        )
         if version_match:
             return version_match.group(1)
         raise RuntimeError("Unable to find version string.")

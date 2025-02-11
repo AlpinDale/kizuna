@@ -4,13 +4,12 @@ import torch
 from loguru import logger
 
 try:
-    import kizuna._C
+    import kizuna._C  # noqa: F401
 except ImportError as e:
     logger.warning(f"Failed to import from kizuna._C with {e}")
 
 
 def hint_on_error(fn):
-
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         try:
@@ -29,34 +28,67 @@ def hint_on_error(fn):
 
 
 # layer norm ops
-def rms_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor,
-             epsilon: float) -> None:
+def rms_norm(
+    out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor, epsilon: float
+) -> None:
     torch.ops._C.rms_norm(out, input, weight, epsilon)
 
 
-def fused_add_rms_norm(input: torch.Tensor, residual: torch.Tensor,
-                       weight: torch.Tensor, epsilon: float) -> None:
+def fused_add_rms_norm(
+    input: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor, epsilon: float
+) -> None:
     torch.ops._C.fused_add_rms_norm(input, residual, weight, epsilon)
 
-def layer_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor,
-               bias: torch.Tensor, epsilon: float) -> None:
+
+def layer_norm(
+    out: torch.Tensor,
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    epsilon: float,
+) -> None:
     torch.ops._C.layer_norm(out, input, weight, bias, epsilon)
 
-def fused_add_layer_norm(input: torch.Tensor, residual: torch.Tensor,
-                        weight: torch.Tensor, bias: torch.Tensor, epsilon: float) -> None:
+
+def fused_add_layer_norm(
+    input: torch.Tensor,
+    residual: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    epsilon: float,
+) -> None:
     torch.ops._C.fused_add_layer_norm(input, residual, weight, bias, epsilon)
 
-def ada_layer_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor,
-                  bias: torch.Tensor, epsilon: float) -> None:
+
+def ada_layer_norm(
+    out: torch.Tensor,
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    epsilon: float,
+) -> None:
     torch.ops._C.ada_layer_norm(out, input, weight, bias, epsilon)
 
-def ada_instance_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor,
-                     bias: torch.Tensor, epsilon: float) -> None:
+
+def ada_instance_norm(
+    out: torch.Tensor,
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    epsilon: float,
+) -> None:
     torch.ops._C.ada_instance_norm(out, input, weight, bias, epsilon)
 
 
-def istft(output: torch.Tensor, magnitude: torch.Tensor, phase: torch.Tensor,
-          window: torch.Tensor, hop_length: int, center: bool=True, normalized: bool=False) -> None:
+def istft(
+    output: torch.Tensor,
+    magnitude: torch.Tensor,
+    phase: torch.Tensor,
+    window: torch.Tensor,
+    hop_length: int,
+    center: bool = True,
+    normalized: bool = False,
+) -> None:
     torch.ops._C.istft(output, magnitude, phase, window, hop_length, center, normalized)
 
 
@@ -70,10 +102,14 @@ for k, v in names_and_values.items():
     # in their annotations. `arg == "torch.Tensor"` is used to handle
     # the case when users use `import __annotations__` to turn type
     # hints into strings.
-    if isinstance(v, fn_type) \
-        and v.__code__.co_filename == __file__ \
-        and any(arg is torch.Tensor or arg == "torch.Tensor"
-                for arg in v.__annotations__.values()):
+    if (
+        isinstance(v, fn_type)
+        and v.__code__.co_filename == __file__
+        and any(
+            arg is torch.Tensor or arg == "torch.Tensor"
+            for arg in v.__annotations__.values()
+        )
+    ):
         names_and_values_to_update[k] = hint_on_error(v)
 
 names_and_values.update(names_and_values_to_update)

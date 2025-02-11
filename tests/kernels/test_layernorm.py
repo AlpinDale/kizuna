@@ -1,8 +1,9 @@
 import pytest
 import torch
 
-from .utils import RMSNorm, LayerNorm, AdaLayerNorm
 from kizuna.modeling.istftnet import AdaIN1d
+
+from .utils import AdaLayerNorm, LayerNorm, RMSNorm
 
 # Test configurations
 DTYPES = [torch.half, torch.bfloat16, torch.float]
@@ -42,7 +43,9 @@ def test_rms_norm(
 
     # Reference implementation should be executed first
     # because the custom kernel is in-place
-    ref_out = layer.forward_native(x.clone(), residual.clone() if residual is not None else None)
+    ref_out = layer.forward_native(
+        x.clone(), residual.clone() if residual is not None else None
+    )
     out = layer(x, residual)
 
     # LayerNorm operators typically have larger numerical errors
@@ -73,7 +76,7 @@ def test_layer_norm(
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
     torch.set_default_device(device)
-    
+
     layer = LayerNorm(hidden_size).to(dtype=dtype)
     layer.weight.data.normal_(mean=1.0, std=0.1)
     layer.bias.data.normal_(mean=0.0, std=0.1)
@@ -86,9 +89,15 @@ def test_layer_norm(
         print("\nInput stats:")
         print(f"x: mean={x.mean().item():.6f}, std={x.std().item():.6f}")
         if residual is not None:
-            print(f"residual: mean={residual.mean().item():.6f}, std={residual.std().item():.6f}")
-        print(f"weight: mean={layer.weight.mean().item():.6f}, std={layer.weight.std().item():.6f}")
-        print(f"bias: mean={layer.bias.mean().item():.6f}, std={layer.bias.std().item():.6f}")
+            print(
+                f"residual: mean={residual.mean().item():.6f}, std={residual.std().item():.6f}"
+            )
+        print(
+            f"weight: mean={layer.weight.mean().item():.6f}, std={layer.weight.std().item():.6f}"
+        )
+        print(
+            f"bias: mean={layer.bias.mean().item():.6f}, std={layer.bias.std().item():.6f}"
+        )
 
     x_ref = x.clone()
     residual_ref = residual.clone() if residual is not None else None
@@ -103,8 +112,12 @@ def test_layer_norm(
 
     if dtype == torch.float16 and hidden_size == 768 and num_tokens == 7:
         print("\nOutput stats:")
-        print(f"ref_out: mean={ref_out[0].mean().item():.6f}, std={ref_out[0].std().item():.6f}")
-        print(f"cuda_out: mean={out[0].mean().item():.6f}, std={out[0].std().item():.6f}")
+        print(
+            f"ref_out: mean={ref_out[0].mean().item():.6f}, std={ref_out[0].std().item():.6f}"
+        )
+        print(
+            f"cuda_out: mean={out[0].mean().item():.6f}, std={out[0].std().item():.6f}"
+        )
 
         diff = (out[0] - ref_out[0]).abs()
         max_diff_idx = diff.argmax()
@@ -161,7 +174,9 @@ def test_ada_layer_norm(
         print(f"gamma: mean={gamma.mean().item():.6f}, std={gamma.std().item():.6f}")
         print(f"beta: mean={beta.mean().item():.6f}, std={beta.std().item():.6f}")
         print("\nOutput stats:")
-        print(f"ref_out: mean={ref_out.mean().item():.6f}, std={ref_out.std().item():.6f}")
+        print(
+            f"ref_out: mean={ref_out.mean().item():.6f}, std={ref_out.std().item():.6f}"
+        )
         print(f"cuda_out: mean={out.mean().item():.6f}, std={out.std().item():.6f}")
 
         diff = (out - ref_out).abs()
@@ -225,7 +240,9 @@ def test_ada_instance_norm(
         print(f"x: mean={x.mean().item():.6f}, std={x.std().item():.6f}")
         print(f"s: mean={s.mean().item():.6f}, std={s.std().item():.6f}")
         print("\nOutput stats:")
-        print(f"ref_out: mean={ref_out.mean().item():.6f}, std={ref_out.std().item():.6f}")
+        print(
+            f"ref_out: mean={ref_out.mean().item():.6f}, std={ref_out.std().item():.6f}"
+        )
         print(f"cuda_out: mean={out.mean().item():.6f}, std={out.std().item():.6f}")
 
         diff = (out - ref_out).abs()
