@@ -1,5 +1,10 @@
 # Kizuna (絆)
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/4739007f-60d0-42a9-a952-6550d189e922" width="200"><br>
+  <em>Calligraphy Artist: KANAZAWA SHOKO</em>
+</p>
+
 Kizuna is a text-to-speech (TTS) library based on [Kokoro](https://github.com/hexgrad/kokoro).
 Essentially a re-write of the more expensive operations using custom Cuda kernels. Kizuna also adds a simple API server.
 
