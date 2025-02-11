@@ -1,4 +1,5 @@
 import io
+import warnings
 
 import soundfile as sf
 import torch
@@ -7,6 +8,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from kizuna import KPipeline
+
+# TODO: fix this warning
+warnings.filterwarnings('ignore', message='dropout option adds dropout after all but last recurrent layer')
 
 app = FastAPI(title="Kizuna TTS API")
 

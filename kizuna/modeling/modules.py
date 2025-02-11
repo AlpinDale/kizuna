@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils import weight_norm
+from torch.nn.utils import parametrizations
 from transformers import AlbertModel
 
 from kizuna import _custom_ops as ops
@@ -55,12 +55,19 @@ class TextEncoder(nn.Module):
         self.cnn = nn.ModuleList()
         for _ in range(depth):
             self.cnn.append(nn.Sequential(
-                weight_norm(nn.Conv1d(channels, channels, kernel_size=kernel_size, padding=padding)),
+                parametrizations.weight_norm(nn.Conv1d(channels, channels, kernel_size=kernel_size, padding=padding)),
                 LayerNorm(channels),
                 actv,
                 nn.Dropout(0.2),
             ))
-        self.lstm = nn.LSTM(channels, channels//2, 1, batch_first=True, bidirectional=True)
+        self.lstm = nn.LSTM(
+            channels, 
+            channels//2, 
+            num_layers=1,
+            batch_first=True, 
+            bidirectional=True,
+            dropout=0.2
+        )
 
     def forward(self, x, input_lengths, m):
         x = self.embedding(x)  # [B, T, emb]
