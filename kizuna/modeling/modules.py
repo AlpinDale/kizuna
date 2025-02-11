@@ -30,7 +30,6 @@ class LayerNorm(nn.Module):
     def forward(self, x):
         x = x.transpose(1, -1)  # move channels to last dimension
         out = torch.empty_like(x)
-        print("Using custom layer norm")
         ops.layer_norm(
             out,
             x,
@@ -38,7 +37,6 @@ class LayerNorm(nn.Module):
             self.beta.data,
             self.eps,
         )
-        print("Done")
         return out.transpose(1, -1)  # move them back
 
 
@@ -87,15 +85,29 @@ class AdaLayerNorm(nn.Module):
         self.fc = nn.Linear(style_dim, channels*2)
 
     def forward(self, x, s):
-        x = x.transpose(-1, -2)
-        x = x.transpose(1, -1)
-        h = self.fc(s)
-        h = h.view(h.size(0), h.size(1), 1)
-        gamma, beta = torch.chunk(h, chunks=2, dim=1)
-        gamma, beta = gamma.transpose(1, -1), beta.transpose(1, -1)
-        x = F.layer_norm(x, (self.channels,), eps=self.eps)
-        x = (1 + gamma) * x + beta
-        return x.transpose(1, -1).transpose(-1, -2)
+        # Original dimension order: [B, C, T]
+        x = x.transpose(-1, -2)  # -> [B, T, C]
+        x = x.transpose(1, -1)   # -> [C, B, T]
+
+        h = self.fc(s)  # [B, channels*2]
+        h = h.view(h.size(0), h.size(1), 1)  # [B, channels*2, 1]
+        gamma, beta = torch.chunk(h, chunks=2, dim=1)  # Each [B, channels, 1]
+        gamma = gamma.transpose(1, -1)  # [1, B, channels]
+        beta = beta.transpose(1, -1)    # [1, B, channels]
+
+        gamma = gamma.expand_as(x)  # [C, B, T]
+        beta = beta.expand_as(x)    # [C, B, T]
+
+        out = torch.empty_like(x)
+        ops.ada_layer_norm(
+            out,
+            x,
+            gamma,
+            beta,
+            self.eps,
+        )
+
+        return out.transpose(1, -1).transpose(-1, -2)  # [B, C, T]
 
 
 class ProsodyPredictor(nn.Module):

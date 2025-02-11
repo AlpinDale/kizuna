@@ -540,6 +540,55 @@ __global__ void fused_add_layer_norm_kernel_fallback(
   }
 }
 
+
+template <typename scalar_t>
+__global__ void ada_layer_norm_kernel(
+    scalar_t* __restrict__ out,           // [..., hidden_size]
+    const scalar_t* __restrict__ input,   // [..., hidden_size]
+    const scalar_t* __restrict__ gamma,   // [..., hidden_size]
+    const scalar_t* __restrict__ beta,    // [..., hidden_size]
+    const float epsilon, const int num_tokens, const int hidden_size) {
+  __shared__ float s_mean;
+  __shared__ float s_variance;
+  float mean = 0.0f;
+
+  // First pass: compute mean
+  for (int idx = threadIdx.x; idx < hidden_size; idx += blockDim.x) {
+    float x = (float)input[blockIdx.x * hidden_size + idx];
+    mean += x;
+  }
+  using BlockReduce = cub::BlockReduce<float, 1024>;
+  __shared__ typename BlockReduce::TempStorage reduceStore;
+  mean = BlockReduce(reduceStore).Reduce(mean, cub::Sum{}, blockDim.x);
+  if (threadIdx.x == 0) {
+    s_mean = mean / hidden_size;
+  }
+  __syncthreads();
+
+  // Second pass: compute variance
+  float variance = 0.0f;
+  for (int idx = threadIdx.x; idx < hidden_size; idx += blockDim.x) {
+    float x = (float)input[blockIdx.x * hidden_size + idx];
+    float diff = x - s_mean;
+    variance += diff * diff;
+  }
+  variance = BlockReduce(reduceStore).Reduce(variance, cub::Sum{}, blockDim.x);
+  if (threadIdx.x == 0) {
+    s_variance = rsqrtf(variance / hidden_size + epsilon);
+  }
+  __syncthreads();
+
+  // Final pass: normalize and apply style-based gamma/beta
+  for (int idx = threadIdx.x; idx < hidden_size; idx += blockDim.x) {
+    float x = (float)input[blockIdx.x * hidden_size + idx];
+    x = (x - s_mean) * s_variance;
+    // Apply style-based gamma (1 + gamma) and beta
+    x = x * (1.0f + (float)gamma[blockIdx.x * hidden_size + idx]) + 
+        (float)beta[blockIdx.x * hidden_size + idx];
+    out[blockIdx.x * hidden_size + idx] = (scalar_t)x;
+  }
+}
+
 }  // namespace kizuna
 
 void rms_norm(torch::Tensor& out,     // [..., hidden_size]
@@ -674,4 +723,26 @@ void fused_add_layer_norm(torch::Tensor& input,     // [..., hidden_size]
   } else {
     LAUNCH_FUSED_ADD_LAYER_NORM(0);
   }
+}
+
+void ada_layer_norm(
+    torch::Tensor& out,      // [..., hidden_size]
+    torch::Tensor& input,    // [..., hidden_size]
+    torch::Tensor& gamma,    // [..., hidden_size]
+    torch::Tensor& beta,     // [..., hidden_size]
+    double epsilon) {
+  int hidden_size = input.size(-1);
+  int num_tokens = input.numel() / hidden_size;
+
+  dim3 grid(num_tokens);
+  dim3 block(std::min(hidden_size, 1024));
+  const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
+  const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  KIZUNA_DISPATCH_FLOATING_TYPES(
+      input.scalar_type(), "ada_layer_norm_kernel", [&] {
+        kizuna::ada_layer_norm_kernel<scalar_t><<<grid, block, 0, stream>>>(
+            out.data_ptr<scalar_t>(), input.data_ptr<scalar_t>(),
+            gamma.data_ptr<scalar_t>(), beta.data_ptr<scalar_t>(),
+            epsilon, num_tokens, hidden_size);
+      });
 }

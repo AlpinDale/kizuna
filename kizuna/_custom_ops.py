@@ -46,6 +46,10 @@ def fused_add_layer_norm(input: torch.Tensor, residual: torch.Tensor,
                         weight: torch.Tensor, bias: torch.Tensor, epsilon: float) -> None:
     torch.ops._C.fused_add_layer_norm(input, residual, weight, bias, epsilon)
 
+def ada_layer_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor,
+                  bias: torch.Tensor, epsilon: float) -> None:
+    torch.ops._C.ada_layer_norm(out, input, weight, bias, epsilon)
+
 
 names_and_values = globals()
 names_and_values_to_update = {}

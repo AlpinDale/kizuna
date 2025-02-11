@@ -1,124 +1,7 @@
-from typing import Optional, Tuple, Union
-
 import pytest
 import torch
 
-
-class RMSNorm(torch.nn.Module):
-    """Root mean square normalization."""
-    def __init__(
-        self,
-        hidden_size: int,
-        eps: float = 1e-6,
-    ) -> None:
-        super().__init__()
-        self.weight = torch.nn.Parameter(torch.ones(hidden_size))
-        self.variance_epsilon = eps
-
-    def forward_native(
-        self,
-        x: torch.Tensor,
-        residual: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        """PyTorch reference implementation."""
-        orig_dtype = x.dtype
-        x = x.to(torch.float32)
-        if residual is not None:
-            x = x + residual.to(torch.float32)
-            residual = x.to(orig_dtype)
-
-        variance = x.pow(2).mean(dim=-1, keepdim=True)
-        x = x * torch.rsqrt(variance + self.variance_epsilon)
-        x = x.to(orig_dtype) * self.weight
-        if residual is None:
-            return x
-        else:
-            return x, residual
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        residual: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        """Custom CUDA kernel implementation."""
-        from kizuna import _custom_ops as ops
-        if residual is not None:
-            ops.fused_add_rms_norm(
-                x,
-                residual,
-                self.weight.data,
-                self.variance_epsilon,
-            )
-            return x, residual
-        out = torch.empty_like(x)
-        ops.rms_norm(
-            out,
-            x,
-            self.weight.data,
-            self.variance_epsilon,
-        )
-        return out
-
-
-class LayerNorm(torch.nn.Module):
-    """Layer normalization."""
-    def __init__(
-        self,
-        hidden_size: int,
-        eps: float = 1e-6,
-    ) -> None:
-        super().__init__()
-        self.weight = torch.nn.Parameter(torch.ones(hidden_size))
-        self.bias = torch.nn.Parameter(torch.zeros(hidden_size))
-        self.variance_epsilon = eps
-
-    def forward_native(
-        self,
-        x: torch.Tensor,
-        residual: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        """PyTorch reference implementation."""
-        orig_dtype = x.dtype
-        x = x.to(torch.float32)
-        if residual is not None:
-            x = x + residual.to(torch.float32)
-            residual = x.to(orig_dtype)
-
-        mean = x.mean(dim=-1, keepdim=True)
-        variance = (x - mean).pow(2).mean(dim=-1, keepdim=True)
-        x = (x - mean) * torch.rsqrt(variance + self.variance_epsilon)
-        x = x.to(orig_dtype) * self.weight + self.bias
-        if residual is None:
-            return x
-        else:
-            return x, residual
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        residual: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        """Custom CUDA kernel implementation."""
-        from kizuna import _custom_ops as ops
-        if residual is not None:
-            ops.fused_add_layer_norm(
-                x,
-                residual,
-                self.weight.data,
-                self.bias.data,
-                self.variance_epsilon,
-            )
-            return x, residual
-        out = torch.empty_like(x)
-        ops.layer_norm(
-            out,
-            x,
-            self.weight.data,
-            self.bias.data,
-            self.variance_epsilon,
-        )
-        return out
-
+from .utils import RMSNorm, LayerNorm, AdaLayerNorm
 
 # Test configurations
 DTYPES = [torch.half, torch.bfloat16, torch.float]
@@ -237,5 +120,58 @@ def test_layer_norm(
         else:
             torch.testing.assert_close(out[0], ref_out[0], atol=1e-2, rtol=1e-2)
         torch.testing.assert_close(out[1], ref_out[1], atol=1e-2, rtol=1e-2)
+    else:
+        torch.testing.assert_close(out, ref_out, atol=1e-2, rtol=1e-2)
+
+
+@pytest.mark.parametrize("num_tokens", NUM_TOKENS)
+@pytest.mark.parametrize("hidden_size", HIDDEN_SIZES)
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("seed", SEEDS)
+@pytest.mark.parametrize("device", CUDA_DEVICES)
+@torch.inference_mode()
+def test_ada_layer_norm(
+    num_tokens: int,
+    hidden_size: int,
+    dtype: torch.dtype,
+    seed: int,
+    device: str,
+) -> None:
+    """Test adaptive layer normalization."""
+    torch.random.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+    torch.set_default_device(device)
+
+    layer = AdaLayerNorm(hidden_size).to(dtype=dtype)
+    scale = 1 / (2 * hidden_size)
+
+    x = torch.randn(num_tokens, hidden_size, dtype=dtype) * scale
+    gamma = torch.randn(num_tokens, hidden_size, dtype=dtype) * 0.1
+    beta = torch.randn(num_tokens, hidden_size, dtype=dtype) * 0.1
+
+    # Reference implementation should be executed first
+    ref_out = layer.forward_native(x.clone(), gamma.clone(), beta.clone())
+    out = layer(x, gamma, beta)
+
+    if dtype == torch.float16 and hidden_size == 768 and num_tokens == 7:
+        print("\nInput stats:")
+        print(f"x: mean={x.mean().item():.6f}, std={x.std().item():.6f}")
+        print(f"gamma: mean={gamma.mean().item():.6f}, std={gamma.std().item():.6f}")
+        print(f"beta: mean={beta.mean().item():.6f}, std={beta.std().item():.6f}")
+        print("\nOutput stats:")
+        print(f"ref_out: mean={ref_out.mean().item():.6f}, std={ref_out.std().item():.6f}")
+        print(f"cuda_out: mean={out.mean().item():.6f}, std={out.std().item():.6f}")
+
+        diff = (out - ref_out).abs()
+        max_diff_idx = diff.argmax()
+        print(f"\nLargest difference at index {max_diff_idx.item()}:")
+        print(f"ref_value: {ref_out.flatten()[max_diff_idx].item():.6f}")
+        print(f"cuda_value: {out.flatten()[max_diff_idx].item():.6f}")
+        print(f"abs_diff: {diff.max().item():.6f}")
+
+    # Use higher tolerance for bfloat16
+    if dtype == torch.bfloat16:
+        torch.testing.assert_close(out, ref_out, atol=5e-2, rtol=5e-2)
     else:
         torch.testing.assert_close(out, ref_out, atol=1e-2, rtol=1e-2)

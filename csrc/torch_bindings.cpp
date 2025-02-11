@@ -39,6 +39,11 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.def(
       "fused_add_layer_norm(Tensor! input, Tensor! residual, Tensor weight, Tensor bias, float epsilon) -> ()");
   ops.impl("fused_add_layer_norm", torch::kCUDA, &fused_add_layer_norm);
+
+  // Apply AdaLayer Normalization to the input tensor.
+  ops.def(
+      "ada_layer_norm(Tensor! out, Tensor input, Tensor gamma, Tensor beta, float epsilon) -> ()");
+  ops.impl("ada_layer_norm", torch::kCUDA, &ada_layer_norm);
 }
 
 REGISTER_EXTENSION(TORCH_EXTENSION_NAME)
