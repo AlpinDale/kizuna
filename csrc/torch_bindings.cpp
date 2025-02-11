@@ -1,8 +1,8 @@
-#include "ops.h"
 #include "core/registration.h"
+#include "ops.h"
 
-#include <torch/library.h>
 #include <torch/all.h>
+#include <torch/library.h>
 
 // Note on op signatures:
 // The X_meta signatures are for the meta functions corresponding to op X.
@@ -25,33 +25,33 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.impl("rms_norm", torch::kCUDA, &rms_norm);
 
   // In-place fused Add and RMS Normalization.
-  ops.def(
-      "fused_add_rms_norm(Tensor! input, Tensor! residual, Tensor weight, "
-      "float epsilon) -> ()");
+  ops.def("fused_add_rms_norm(Tensor! input, Tensor! residual, Tensor weight, "
+          "float epsilon) -> ()");
   ops.impl("fused_add_rms_norm", torch::kCUDA, &fused_add_rms_norm);
 
   // Apply Layer Normalization to the input tensor.
-  ops.def(
-      "layer_norm(Tensor! out, Tensor input, Tensor weight, Tensor bias, float epsilon) -> ()");
+  ops.def("layer_norm(Tensor! out, Tensor input, Tensor weight, Tensor bias, "
+          "float epsilon) -> ()");
   ops.impl("layer_norm", torch::kCUDA, &layer_norm);
 
   // In-place fused Add and Layer Normalization.
-  ops.def(
-      "fused_add_layer_norm(Tensor! input, Tensor! residual, Tensor weight, Tensor bias, float epsilon) -> ()");
+  ops.def("fused_add_layer_norm(Tensor! input, Tensor! residual, Tensor "
+          "weight, Tensor bias, float epsilon) -> ()");
   ops.impl("fused_add_layer_norm", torch::kCUDA, &fused_add_layer_norm);
 
   // Apply AdaLayer Normalization to the input tensor.
-  ops.def(
-      "ada_layer_norm(Tensor! out, Tensor input, Tensor gamma, Tensor beta, float epsilon) -> ()");
+  ops.def("ada_layer_norm(Tensor! out, Tensor input, Tensor gamma, Tensor "
+          "beta, float epsilon) -> ()");
   ops.impl("ada_layer_norm", torch::kCUDA, &ada_layer_norm);
 
   // Apply AdaInstance Normalization to the input tensor.
-  ops.def(
-      "ada_instance_norm(Tensor! out, Tensor input, Tensor gamma, Tensor beta, float epsilon) -> ()");
+  ops.def("ada_instance_norm(Tensor! out, Tensor input, Tensor gamma, Tensor "
+          "beta, float epsilon) -> ()");
   ops.impl("ada_instance_norm", torch::kCUDA, &ada_instance_norm);
 
   // ISTFT operation
-  ops.def("istft(Tensor! output, Tensor! magnitude, Tensor! phase, Tensor! window, int hop_length, bool center, bool normalized) -> ()");
+  ops.def("istft(Tensor! output, Tensor! magnitude, Tensor! phase, Tensor! "
+          "window, int hop_length, bool center, bool normalized) -> ()");
   ops.impl("istft", torch::kCUDA, &istft);
 }
 
