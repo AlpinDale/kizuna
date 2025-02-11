@@ -1,12 +1,14 @@
 # https://github.com/yl4579/StyleTTS2/blob/main/models.py
-from .istftnet import AdainResBlk1d
-from torch.nn.utils import weight_norm
-from transformers import AlbertModel
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils import weight_norm
+from transformers import AlbertModel
+
 from kizuna import _custom_ops as ops
+from kizuna.modeling.custom_op import CustomOp
+
+from .istftnet import AdainResBlk1d
 
 
 class LinearNorm(nn.Module):
@@ -19,7 +21,7 @@ class LinearNorm(nn.Module):
         return self.linear_layer(x)
 
 
-class LayerNorm(nn.Module):
+class LayerNorm(CustomOp):
     def __init__(self, channels, eps=1e-5):
         super().__init__()
         self.channels = channels
@@ -27,7 +29,12 @@ class LayerNorm(nn.Module):
         self.gamma = nn.Parameter(torch.ones(channels))
         self.beta = nn.Parameter(torch.zeros(channels))
 
-    def forward(self, x):
+    def forward_native(self, x):
+        x = x.transpose(1, -1)
+        x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
+        return x.transpose(1, -1)
+
+    def forward_cuda(self, x):
         x = x.transpose(1, -1)  # move channels to last dimension
         out = torch.empty_like(x)
         ops.layer_norm(
@@ -77,14 +84,25 @@ class TextEncoder(nn.Module):
         return x
 
 
-class AdaLayerNorm(nn.Module):
+class AdaLayerNorm(CustomOp):
     def __init__(self, style_dim, channels, eps=1e-5):
         super().__init__()
         self.channels = channels
         self.eps = eps
         self.fc = nn.Linear(style_dim, channels*2)
 
-    def forward(self, x, s):
+    def forward_native(self, x, s):
+        x = x.transpose(-1, -2)
+        x = x.transpose(1, -1)
+        h = self.fc(s)
+        h = h.view(h.size(0), h.size(1), 1)
+        gamma, beta = torch.chunk(h, chunks=2, dim=1)
+        gamma, beta = gamma.transpose(1, -1), beta.transpose(1, -1)
+        x = F.layer_norm(x, (self.channels,), eps=self.eps)
+        x = (1 + gamma) * x + beta
+        return x.transpose(1, -1).transpose(-1, -2)
+
+    def forward_cuda(self, x, s):
         # Original dimension order: [B, C, T]
         x = x.transpose(-1, -2)  # -> [B, T, C]
         x = x.transpose(1, -1)   # -> [C, B, T]
