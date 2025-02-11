@@ -5,3 +5,6 @@ numpy==1.26.4
 scipy
 torch==2.4.0
 transformers
+fastapi
+uvicorn
+python-multipart
