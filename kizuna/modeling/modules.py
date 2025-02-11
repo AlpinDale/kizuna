@@ -29,12 +29,27 @@ class LayerNorm(CustomOp):
         self.gamma = nn.Parameter(torch.ones(channels))
         self.beta = nn.Parameter(torch.zeros(channels))
 
-    def forward_native(self, x):
+    def forward_native(self, x, residual=None):
+        """PyTorch reference implementation."""
+        if residual is not None:
+            x = x + residual
+            residual = x  # Save for return
+
         x = x.transpose(1, -1)
         x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
-        return x.transpose(1, -1)
+        x = x.transpose(1, -1)
+        
+        if residual is not None:
+            return x, residual
 
-    def forward_cuda(self, x):
+        return x
+
+    def forward_cuda(self, x, residual=None):
+        """Custom CUDA kernel implementation."""
+        if residual is not None:
+            x = x + residual
+            residual = x  # Save for return
+
         x = x.transpose(1, -1)  # move channels to last dimension
         out = torch.empty_like(x)
         ops.layer_norm(
@@ -44,7 +59,12 @@ class LayerNorm(CustomOp):
             self.beta.data,
             self.eps,
         )
-        return out.transpose(1, -1)  # move them back
+        out = out.transpose(1, -1)  # move them back
+
+        if residual is not None:
+            return out, residual
+
+        return out
 
 
 class TextEncoder(nn.Module):

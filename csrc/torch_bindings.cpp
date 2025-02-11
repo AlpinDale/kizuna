@@ -44,6 +44,11 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.def(
       "ada_layer_norm(Tensor! out, Tensor input, Tensor gamma, Tensor beta, float epsilon) -> ()");
   ops.impl("ada_layer_norm", torch::kCUDA, &ada_layer_norm);
+
+  // Apply AdaInstance Normalization to the input tensor.
+  ops.def(
+      "ada_instance_norm(Tensor! out, Tensor input, Tensor gamma, Tensor beta, float epsilon) -> ()");
+  ops.impl("ada_instance_norm", torch::kCUDA, &ada_instance_norm);
 }
 
 REGISTER_EXTENSION(TORCH_EXTENSION_NAME)

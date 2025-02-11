@@ -6,6 +6,8 @@ import torch.nn.functional as F
 from scipy.signal import get_window
 from torch.nn.utils import parametrizations
 
+from kizuna.modeling.custom_op import CustomOp
+
 
 # https://github.com/yl4579/StyleTTS2/blob/main/Modules/utils.py
 def init_weights(m, mean=0.0, std=0.01):
@@ -17,17 +19,33 @@ def get_padding(kernel_size, dilation=1):
     return int((kernel_size*dilation - dilation)/2)
 
 
-class AdaIN1d(nn.Module):
+class AdaIN1d(CustomOp):
     def __init__(self, style_dim, num_features):
         super().__init__()
         self.norm = nn.InstanceNorm1d(num_features, affine=False)
         self.fc = nn.Linear(style_dim, num_features*2)
+        self.eps = 1e-5
 
-    def forward(self, x, s):
+    def forward_native(self, x, s):
         h = self.fc(s)
         h = h.view(h.size(0), h.size(1), 1)
         gamma, beta = torch.chunk(h, chunks=2, dim=1)
         return (1 + gamma) * self.norm(x) + beta
+
+    def forward_cuda(self, x, s):
+        from kizuna import _custom_ops as ops
+        h = self.fc(s)
+        h = h.view(h.size(0), h.size(1), 1)
+        gamma, beta = torch.chunk(h, chunks=2, dim=1)
+        out = torch.empty_like(x)
+        ops.ada_instance_norm(
+            out,
+            x,
+            gamma,
+            beta,
+            self.eps,
+        )
+        return out
 
 
 class AdaINResBlock1(nn.Module):

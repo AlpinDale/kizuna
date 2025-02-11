@@ -50,6 +50,10 @@ def ada_layer_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor,
                   bias: torch.Tensor, epsilon: float) -> None:
     torch.ops._C.ada_layer_norm(out, input, weight, bias, epsilon)
 
+def ada_instance_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor,
+                     bias: torch.Tensor, epsilon: float) -> None:
+    torch.ops._C.ada_instance_norm(out, input, weight, bias, epsilon)
+
 
 names_and_values = globals()
 names_and_values_to_update = {}

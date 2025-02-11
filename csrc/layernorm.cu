@@ -589,6 +589,65 @@ __global__ void ada_layer_norm_kernel(
   }
 }
 
+
+template <typename scalar_t>
+__global__ void ada_instance_norm_kernel(
+    scalar_t* __restrict__ out,           // [B, C, T]
+    const scalar_t* __restrict__ input,   // [B, C, T]
+    const scalar_t* __restrict__ gamma,   // [B, C, 1]
+    const scalar_t* __restrict__ beta,    // [B, C, 1]
+    const float epsilon,
+    const int batch_size,
+    const int channels,
+    const int time_steps) {
+
+    // Each block handles one channel of one batch
+    const int batch_idx = blockIdx.x / channels;
+    const int channel_idx = blockIdx.x % channels;
+
+    __shared__ float s_mean;
+    __shared__ float s_variance;
+    float mean = 0.0f;
+
+    // mean across time dimension
+    for (int t = threadIdx.x; t < time_steps; t += blockDim.x) {
+        const int idx = (batch_idx * channels + channel_idx) * time_steps + t;
+        mean += (float)input[idx];
+    }
+
+    using BlockReduce = cub::BlockReduce<float, 1024>;
+    __shared__ typename BlockReduce::TempStorage reduceStore;
+    mean = BlockReduce(reduceStore).Reduce(mean, cub::Sum{}, blockDim.x);
+    if (threadIdx.x == 0) {
+        s_mean = mean / time_steps;
+    }
+    __syncthreads();
+
+    // variance
+    float variance = 0.0f;
+    for (int t = threadIdx.x; t < time_steps; t += blockDim.x) {
+        const int idx = (batch_idx * channels + channel_idx) * time_steps + t;
+        float diff = (float)input[idx] - s_mean;
+        variance += diff * diff;
+    }
+    variance = BlockReduce(reduceStore).Reduce(variance, cub::Sum{}, blockDim.x);
+    if (threadIdx.x == 0) {
+        s_variance = rsqrtf(variance / time_steps + epsilon);
+    }
+    __syncthreads();
+
+    // normalization and style-based scaling
+    const float g = 1.0f + (float)gamma[batch_idx * channels + channel_idx];
+    const float b = (float)beta[batch_idx * channels + channel_idx];
+
+    for (int t = threadIdx.x; t < time_steps; t += blockDim.x) {
+        const int idx = (batch_idx * channels + channel_idx) * time_steps + t;
+        float x = (float)input[idx];
+        x = (x - s_mean) * s_variance;
+        out[idx] = (scalar_t)(g * x + b);
+    }
+}
+
 }  // namespace kizuna
 
 void rms_norm(torch::Tensor& out,     // [..., hidden_size]
@@ -745,4 +804,36 @@ void ada_layer_norm(
             gamma.data_ptr<scalar_t>(), beta.data_ptr<scalar_t>(),
             epsilon, num_tokens, hidden_size);
       });
+}
+
+void ada_instance_norm(
+    torch::Tensor& out,      // [B, C, T]
+    torch::Tensor& input,    // [B, C, T]
+    torch::Tensor& gamma,    // [B, C, 1]
+    torch::Tensor& beta,     // [B, C, 1]
+    double epsilon) {
+    
+    int batch_size = input.size(0);
+    int channels = input.size(1);
+    int time_steps = input.size(2);
+
+    dim3 grid(batch_size * channels);  // One block per (batch, channel) pair
+    dim3 block(std::min(time_steps, 1024));
+    
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    
+    KIZUNA_DISPATCH_FLOATING_TYPES(
+        input.scalar_type(), "ada_instance_norm_kernel", [&] {
+            kizuna::ada_instance_norm_kernel<scalar_t><<<grid, block, 0, stream>>>(
+                out.data_ptr<scalar_t>(),
+                input.data_ptr<scalar_t>(),
+                gamma.data_ptr<scalar_t>(),
+                beta.data_ptr<scalar_t>(),
+                epsilon,
+                batch_size,
+                channels,
+                time_steps
+            );
+        });
 }

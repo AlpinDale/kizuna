@@ -96,7 +96,19 @@ class KModel(torch.nn.Module):
         duration = torch.sigmoid(duration).sum(axis=-1) / speed
         pred_dur = torch.round(duration).clamp(min=1).long().squeeze()
         logger.debug(f"pred_dur: {pred_dur}")
-        indices = torch.repeat_interleave(torch.arange(input_ids.shape[1], device=self.device), pred_dur)
+
+        pred_dur = pred_dur.clamp(min=1)  # Ensure no negative durations
+
+        total_duration = pred_dur.sum()
+        if total_duration > 10000:  # Set a reasonable maximum length
+            # Scale down durations proportionally if too long
+            scale_factor = 10000 / total_duration
+            pred_dur = (pred_dur * scale_factor).ceil().long()
+
+        indices = torch.repeat_interleave(
+            torch.arange(input_ids.shape[1], device=self.device),
+            pred_dur
+        )
         pred_aln_trg = torch.zeros((input_ids.shape[1], indices.shape[0]), device=self.device)
         pred_aln_trg[indices, torch.arange(indices.shape[0])] = 1
         pred_aln_trg = pred_aln_trg.unsqueeze(0).to(self.device)
