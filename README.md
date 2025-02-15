@@ -13,7 +13,7 @@ This project is still under progress and currently made public for collaboration
 ## Installation
 
 ```bash
-git clone https://github.com/hexgrad/kizuna.git && cd kizuna
+git clone https://github.com/Alpindale/kizuna.git && cd kizuna
 pip install -e .
 ```
 
